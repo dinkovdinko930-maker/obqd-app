@@ -1,0 +1,20 @@
+{
+  "name": "ОБЯД",
+  "short_name": "ОБЯД",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f0f8f0",
+  "theme_color": "#2e8b57",
+  "icons": [
+    {
+      "src": "obqd.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "obqd.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
