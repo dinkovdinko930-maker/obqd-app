@@ -259,13 +259,13 @@ function canEditMeals() {
   const hours = now.getHours();
   const minutes = now.getMinutes();
   
-  // Разрешено до 9:20
-  return (hours < 9) || (hours === 9 && minutes < 20);
+  // Разрешено до 9:30
+  return (hours < 9) || (hours === 9 && minutes < 30);
 }
 
 // ------------------ Toggle за обяд ------------------
 function toggleMeal(name, day){
-  // Блокиране за днес след 9:20
+  // Блокиране за днес след 9:30
   if(day === "today" && !canEditMeals()){
     alert("⛔ Вече не можете да правите промени за днес.");
     return; // спира функцията
@@ -651,3 +651,4 @@ checkAndResetForNewDay();
 </script>
 </body>
 </html>
+
