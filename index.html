@@ -38,9 +38,6 @@ tr.free {
   color: #333;               /* тъмно сиво за текста */
 }
 
-@media print { @page { size: A4 landscape; margin: 10mm; } body * { visibility: hidden; /* скриваме всичко */ } #statsTable, #statsTable * { visibility: visible; /* показваме само таблицата */ } #statsTable { position: absolute; top: 0; left: 0; width: 100%; overflow: visible; transform-origin: top left; display: inline-block; white-space: nowrap; } table { border-collapse: collapse; width: 100%; font-size: 12px; } th, td { border: 1px solid #000; padding: 4px; text-align: center; word-break: break-word; } }
-
-
 </style>
 
 <!-- Firebase -->
@@ -710,3 +707,4 @@ checkAndResetForNewDay();
 </script>
 </body>
 </html>
+
