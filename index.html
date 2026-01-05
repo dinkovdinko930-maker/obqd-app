@@ -325,7 +325,7 @@ function renderStats(month=null){
   function buildTable(monthKey, daysInMonth, freeKidsFromDB){
     let table = "<table><tr><th>Име</th>";
     for(let d=1; d<=daysInMonth; d++){ table += `<th>${d}</th>`; }
-    table += "<th>Общо</th><th>Лева</th></tr>";
+    table += "<th>Общо</th><th>Евро</th></tr>";
 
     let grandTotal = 0;
     children.forEach(name=>{
@@ -339,7 +339,7 @@ function renderStats(month=null){
       }
       grandTotal += total;
 
-      const defaultPayment = total * 3;
+      const defaultPayment = total * 1.5;
       row += `<td>${total}</td>`;
       row += `<td contenteditable="true" class="payment-cell" data-default="${defaultPayment}">${defaultPayment}</td>`;
       row += `</tr>`;
@@ -349,7 +349,7 @@ function renderStats(month=null){
     table += `<tr id='total-row'><td>Общо</td><td colspan='${daysInMonth}'></td><td>${grandTotal}</td><td id="totalPayment"></td></tr></table>`;
     document.getElementById("statsTable").innerHTML = table;
 
-    // --- Сумиране на колона "Лева" ---
+    // --- Сумиране на колона "Евро" ---
     function updatePaymentSum() {
       let sum = 0;
       document.querySelectorAll(".payment-cell").forEach(cell=>{
@@ -707,4 +707,5 @@ checkAndResetForNewDay();
 </script>
 </body>
 </html>
+
 
