@@ -288,7 +288,8 @@ function renderStats(month=null){
   const today = new Date();
   const monthKey = month || today.toISOString().slice(0,7); // YYYY-MM
   updateStatsMonthHeader(monthKey);
-  const daysInMonth = new Date(today.getFullYear(), today.getMonth()+1,0).getDate();
+  const [year, monthNum] = monthKey.split("-").map(Number);
+  const daysInMonth = new Date(year, monthNum, 0).getDate();
 
   const currentMonthRef = db.ref(`classes/${currentClass}/freeKids/${monthKey}`);
 
@@ -707,5 +708,6 @@ checkAndResetForNewDay();
 </script>
 </body>
 </html>
+
 
 
