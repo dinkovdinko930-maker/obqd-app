@@ -341,7 +341,7 @@ function renderStats(month=null){
       }
       grandTotal += total;
 
-      const defaultPayment = total * 1.5;
+      const defaultPayment = (total * 2.2).toFixed(2);
       row += `<td>${total}</td>`;
       row += `<td contenteditable="true" class="payment-cell" data-default="${defaultPayment}">${defaultPayment}</td>`;
       row += `</tr>`;
@@ -352,20 +352,23 @@ function renderStats(month=null){
     document.getElementById("statsTable").innerHTML = table;
 
     // --- Сумиране на колона "Евро" ---
-    function updatePaymentSum() {
-      let sum = 0;
-      document.querySelectorAll(".payment-cell").forEach(cell=>{
-        if(cell.textContent.toLowerCase() !== "безплатен"){ 
-          const val = parseFloat(cell.textContent) || 0;
-          sum += val;
-        }
-      });
-      document.getElementById("totalPayment").textContent = sum;
-    }
+function updatePaymentSum() {
+  let sum = 0;
 
-    document.querySelectorAll(".payment-cell").forEach(cell=>{
-      cell.addEventListener("input", updatePaymentSum);
-    });
+  document.querySelectorAll(".payment-cell").forEach(cell=>{
+    if(cell.textContent.toLowerCase() !== "безплатен"){ 
+      const val = parseFloat(cell.textContent) || 0;
+      sum += val;
+    }
+  });
+
+  // Закръгляне до 2 знака след десетичната точка
+  document.getElementById("totalPayment").textContent = sum.toFixed(2);
+}
+
+document.querySelectorAll(".payment-cell").forEach(cell=>{
+  cell.addEventListener("input", updatePaymentSum);
+});
 
     // --- Възстановяване на безплатните деца ---
     freeKidsFromDB.forEach(name=>{
