@@ -38,6 +38,7 @@ tr.free {
   color: #333;               /* тъмно сиво за текста */
 }
 
+
 </style>
 
 <!-- Firebase -->
@@ -181,11 +182,69 @@ db.ref('classes').once('value').then(snapshot => {
 
 
 // ------------------ Форматиране на дата ------------------
-function formatDate(d){ return d.toLocaleDateString('bg-BG'); }
 
-function getTodayKey() {
-  return new Date().toISOString().slice(0,10); // винаги "YYYY-MM-DD"
+
+async function getServerClock() {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+  try {
+    const response = await fetch(
+      "https://utctime.app/api/now/Europe/Sofia",
+      {
+        method: "GET",
+        cache: "no-store",
+        signal: controller.signal
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error("Услугата за време не отговаря.");
+    }
+
+    const data = await response.json();
+    const serverDateTime = data.datetime || data.local_iso;
+
+    if (
+      typeof serverDateTime !== "string" ||
+      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(serverDateTime)
+    ) {
+      throw new Error("Получена е невалидна дата.");
+    }
+
+    const timestamp = Number(data.unix_ms) || Date.parse(serverDateTime);
+
+    if (!Number.isFinite(timestamp)) {
+      throw new Error("Невалидно време от сървъра.");
+    }
+
+    const match = serverDateTime.match(/T(\d{2}):(\d{2})/);
+
+    return {
+      today: serverDateTime.slice(0, 10),
+      hours: Number(match[1]),
+      minutes: Number(match[2]),
+      timestamp
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
+
+// ------------------ Форматиране на дата ------------------
+function formatDate(date) {
+  return date.toLocaleDateString("bg-BG", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric"
+  });
+}
+
+async function getTodayKey() {
+  const clock = await getServerClock();
+  return clock.today;
+}
+
 
 
 // ------------------ Слушане на промени в Firebase ------------------
@@ -227,50 +286,81 @@ function renderToday(){
 // ------------------ Тогъл за Firebase ------------------
 // ------------------ Ограничение по час ------------------
 // ------------------ Проверка дали може да се редактират днешните обяди ------------------
-function canEditMeals() {
-  const now = new Date();
-  const hours = now.getHours();
-  const minutes = now.getMinutes();
-  
-  // Разрешено до 9:30
-  return (hours < 9) || (hours === 9 && minutes < 30);
+
+
+function canEditMeals(clock) {
+  if (!clock) return false;
+
+  return clock.hours < 9;
 }
 
+
 // ------------------ Toggle за обяд ------------------
-function toggleMeal(name, day){
-  // Блокиране за днес след 9:30
-  if(!canEditMeals()){
-    alert("⛔ Вече не можете да правите промени за днес.");
-    return;
-  }
 
-  const ref = db.ref(`classes/${currentClass}/meals/${day}`);
-  ref.get().then(snap=>{
-    let arr = snap.val() || [];
-    const today = new Date();
-    const monthKey = today.toISOString().slice(0,7); // YYYY-MM
-    const dayKey = today.toISOString().slice(0,10);  // YYYY-MM-DD
+async function toggleMeal(name, day) {
+  try {
+const clock = await checkAndResetForNewDay();
 
-    if(arr.includes(name)){
-      arr = arr.filter(x=>x!==name);
+    if (!canEditMeals(clock)) {
+      alert("⛔ Вече не можете да правите промени след 9:00.");
+      return;
+    }
+
+    const today = clock.today;
+    const monthKey = today.slice(0, 7);
+    const dayKey = today;
+
+    const ref = db.ref(`classes/${currentClass}/meals/${day}`);
+    const snap = await ref.get();
+
+    let arr = Array.isArray(snap.val()) ? [...snap.val()] : [];
+
+    if (arr.includes(name)) {
+      arr = arr.filter(x => x !== name);
     } else {
       arr.push(name);
     }
-    ref.set(arr);
 
-    // Обновяване на историята само за днес
-    if(day === "today"){
-      if(!historyData[monthKey]) historyData[monthKey]={};
-      if(!historyData[monthKey][dayKey]) historyData[monthKey][dayKey]=[];
-      if(arr.includes(name)){
-        if(!historyData[monthKey][dayKey].includes(name)) historyData[monthKey][dayKey].push(name);
-      } else {
-        historyData[monthKey][dayKey] = historyData[monthKey][dayKey].filter(x=>x!==name);
+    await ref.set(arr);
+
+    // Историята се променя само за днешния обяд.
+    if (day === "today") {
+      const historyRef = db.ref(
+        `classes/${currentClass}/history/${monthKey}/${dayKey}`
+      );
+
+      const result = await historyRef.transaction(current => {
+        let history = Array.isArray(current) ? [...current] : [];
+
+        if (arr.includes(name)) {
+          if (!history.includes(name)) {
+            history.push(name);
+          }
+        } else {
+          history = history.filter(x => x !== name);
+        }
+
+        return history;
+      });
+
+      const savedHistory = result.snapshot.val() || [];
+
+      if (!historyData[monthKey]) {
+        historyData[monthKey] = {};
       }
-      db.ref(`classes/${currentClass}/history/${monthKey}/${dayKey}`).set(historyData[monthKey][dayKey]);
+
+      historyData[monthKey][dayKey] = savedHistory;
     }
-  });
+  } catch (error) {
+    console.error("Грешка при отбелязване на обяд:", error);
+
+    alert(
+      "Не успяхме да запишем промяната. " +
+      "Проверете интернет връзката и опитайте отново."
+    );
+  }
 }
+
 
 function updateStatsMonthHeader(monthKey){
     const monthsBg = [
@@ -289,8 +379,7 @@ function renderStats(month=null){
   const today = new Date();
   const monthKey = month || today.toISOString().slice(0,7); // YYYY-MM
   updateStatsMonthHeader(monthKey);
-  const [year, monthNum] = monthKey.split("-").map(Number);
-  const daysInMonth = new Date(year, monthNum, 0).getDate();
+  const daysInMonth = new Date(today.getFullYear(), today.getMonth()+1,0).getDate();
 
   const currentMonthRef = db.ref(`classes/${currentClass}/freeKids/${monthKey}`);
 
@@ -341,9 +430,10 @@ function renderStats(month=null){
       }
       grandTotal += total;
 
-      const defaultPayment = (total * 2.2).toFixed(2);
-      row += `<td>${total}</td>`;
-      row += `<td contenteditable="true" class="payment-cell" data-default="${defaultPayment}">${defaultPayment}</td>`;
+
+     const defaultPayment = (total * 2.2).toFixed(2);
+     row += `<td>${total}</td>`;
+     row += `<td contenteditable="true" class="payment-cell" data-default="${defaultPayment}">${defaultPayment}</td>`;
       row += `</tr>`;
       table += row;
     });
@@ -351,7 +441,7 @@ function renderStats(month=null){
     table += `<tr id='total-row'><td>Общо</td><td colspan='${daysInMonth}'></td><td>${grandTotal}</td><td id="totalPayment"></td></tr></table>`;
     document.getElementById("statsTable").innerHTML = table;
 
-    // --- Сумиране на колона "Евро" ---
+   // --- Сумиране на колона "Евро" ---
 function updatePaymentSum() {
   let sum = 0;
 
@@ -448,6 +538,7 @@ function showAdmin() {
         <th>${today.toLocaleDateString('bg-BG')} - ${getWeekDay(today)}</th>
       </tr>
     `;
+
 
 // --- Основна таблица с класовете ---
 for (const cls in classes) {
@@ -637,81 +728,189 @@ function goBack(){
   document.getElementById("classSelection").style.display = "block";
   document.getElementById("homeImage").style.display = "block";
 }
-// Функция за нулиране на всички класове, които още не са въвели данни
-async function resetAllClassesForNewDay() {
-  const today = getTodayKey();
 
-  try {
-    const snapshot = await db.ref('classes').get();
-    const classes = snapshot.val();
+ // Функция за нулиране на класовете за нов ден
 
-    for (const className in classes) {
-      const classData = classes[className];
-      const lastVisit = classData.lastVisitDate;
 
-      if (lastVisit !== today) {
-        console.log(`➡ Нулирам ${className} (lastVisitDate: ${lastVisit})`);
+async function resetAllClassesForNewDay(today) {
+  const snapshot = await db.ref("classes").get();
+  const classes = snapshot.val();
 
-        // Зануляване на списъците
-        await db.ref(`classes/${className}/meals/today`).set([]);
-        await db.ref(`classes/${className}/meals/tomorrow`).set([]);
+  if (!classes || typeof classes !== "object") {
+    throw new Error("Не са намерени данни за класовете.");
+  }
 
-        // Обновяване на датата
-        await db.ref(`classes/${className}/lastVisitDate`).set(today);
+  const updates = {};
 
-        // Записваме статус "няма информация"
-        await db.ref(`classes/${className}/status`).set("няма информация");
-      } else {
-        console.log(`✔ ${className} вече е актуален за ${today}`);
+  for (const className of Object.keys(classes)) {
+    updates[`classes/${className}/meals/today`] = [];
+    updates[`classes/${className}/meals/tomorrow`] = [];
+    updates[`classes/${className}/lastVisitDate`] = today;
+    updates[`classes/${className}/status`] = "няма информация";
+  }
 
-        // Ако вече има данни, статусът е "въведени данни"
-        await db.ref(`classes/${className}/status`).set("въведени данни");
+  // Датата и отметките се записват атомарно.
+  // Историята и списъците с ученици не се променят.
+  updates["classesMeta/lastResetDate"] = today;
+
+  await db.ref().update(updates);
+}
+
+async function checkAndResetForNewDay() {
+  const clock = await getServerClock();
+  const today = clock.today;
+
+  const lastResetRef = db.ref("classesMeta/lastResetDate");
+  const lockRef = db.ref("classesMeta/resetLock");
+
+  let markerSnapshot = await lastResetRef.get();
+  let lastResetDate = markerSnapshot.val();
+
+  // За днес вече е нулирано.
+  if (lastResetDate === today) {
+    return clock;
+  }
+
+  // Първоначална настройка без предишен маркер.
+  // Не изтриваме данни, ако не можем безопасно да установим
+  // дали вече има отметки за текущия ден.
+  if (lastResetDate == null) {
+    const classesSnapshot = await db.ref("classes").get();
+    const classes = classesSnapshot.val();
+
+    if (!classes || typeof classes !== "object") {
+      throw new Error("Не са намерени данни за класовете.");
+    }
+
+    const allAlreadyToday = Object.values(classes).every(
+      cls => cls && cls.lastVisitDate === today
+    );
+
+    if (!allAlreadyToday) {
+      throw new Error(
+        "Първоначалната настройка изисква проверка на датите. " +
+        "Отметките не са изтрити."
+      );
+    }
+
+    // Създаваме маркера, без да променяме отметките.
+    await lastResetRef.transaction(current => {
+      if (current == null) return today;
+      return;
+    });
+
+    markerSnapshot = await lastResetRef.get();
+    lastResetDate = markerSnapshot.val();
+
+    if (lastResetDate === today) {
+      console.log("Първоначалната настройка приключи. Отметките са запазени.");
+      return clock;
+    }
+  }
+
+  // Само едно приложение получава право да нулира.
+  const claim = await lockRef.transaction(current => {
+    if (
+      current &&
+      current.date === today &&
+      current.status === "running" &&
+      clock.timestamp - Number(current.startedAt || 0) < 60000
+    ) {
+      return;
+    }
+
+    return {
+      date: today,
+      status: "running",
+      startedAt: clock.timestamp
+    };
+  });
+
+  if (!claim.committed) {
+    // Изчакваме другото приложение да завърши.
+    for (let i = 0; i < 40; i++) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      markerSnapshot = await lastResetRef.get();
+
+      if (markerSnapshot.val() === today) {
+        return clock;
+      }
+
+      const lockSnapshot = await lockRef.get();
+      const lock = lockSnapshot.val();
+
+      if (
+        lock &&
+        lock.date === today &&
+        lock.status === "error"
+      ) {
+        throw new Error("Нулирането е неуспешно. Опитайте отново.");
       }
     }
 
-    console.log("✅ Нулирането за всички класове приключи успешно!");
-  } catch (error) {
-    console.error("Грешка при resetAllClassesForNewDay:", error);
+    throw new Error(
+      "Нулирането още не е приключило. Опитайте отново след малко."
+    );
   }
-}
-
-// Функция за проверка дали е нов ден и атомарно нулиране само веднъж
-async function checkAndResetForNewDay() {
-  const today = getTodayKey(); // формата YYYY-MM-DD
 
   try {
-    const lastResetRef = db.ref('classesMeta/lastResetDate');
+    // Отметките и маркерът се записват с една операция.
+    await resetAllClassesForNewDay(today);
 
-    await lastResetRef.transaction(async (currentValue) => {
-      if (currentValue === today) {
-        console.log("Данните вече са нулирани за днес.");
-        return; // вече е нулирано
-      }
+    // Този запис е само за състоянието на заключването.
+    // Ако не успее, маркерът за успешното нулиране вече е записан.
+    try {
+      await lockRef.set({
+        date: today,
+        status: "done",
+        completedAt: clock.timestamp
+      });
+    } catch (lockError) {
+      console.warn("Не може да се обнови заключването:", lockError);
+    }
 
-      console.log("Първо влизане за деня, нулиране на всички класове...");
-      await resetAllClassesForNewDay();
-
-      return today; // обновяваме последното нулиране
-    });
-
+    console.log("Нулирането за новия ден приключи успешно.");
+    return clock;
   } catch (error) {
-    console.error("Грешка при проверка и нулиране с транзакция:", error);
+    try {
+      await lockRef.set({
+        date: today,
+        status: "error",
+        failedAt: clock.timestamp
+      });
+    } catch (lockError) {
+      console.error("Не може да се запише състоянието:", lockError);
+    }
+
+    throw error;
   }
 }
 
 
 
+ // ------------------ Старт ------------------
 
-// ------------------ Старт ------------------
-window.onload = ()=> {
-checkAndResetForNewDay();
-  document.getElementById("classSelection").style.display = "block";
+window.onload = async () => {
+  const classSelection = document.getElementById("classSelection");
+  classSelection.style.display = "none";
+
+  try {
+    await checkAndResetForNewDay();
+    classSelection.style.display = "block";
+  } catch (error) {
+    console.error("Приложението не може да се стартира безопасно:", error);
+
+    alert(
+      "Приложението не успя да провери датата или да завърши нулирането. " +
+      "Проверете интернет връзката и презаредете страницата. " +
+      "Не променяйте данните във Firebase ръчно."
+    );
+  }
 };
+
 
 
 </script>
 </body>
 </html>
-
-
-
