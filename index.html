@@ -18,8 +18,23 @@
   .child-card.active { background:#c4f7c4; border:2px solid #28a745; }
   .child-card:hover { transform:scale(1.02); }
   #counter { font-size:18px; font-weight:bold; margin:10px 0 20px 0; }
-  table { width:95%; margin:10px auto; border-collapse:collapse; background:white; box-shadow:0 0 8px rgba(0,0,0,0.15); }
-  th, td { border:1px solid #aaa; padding:6px; text-align:center; font-size:14px; }
+  
+table {
+  width: 65%;
+  max-width: 750px;
+  margin: 10px auto;
+  border-collapse: collapse;
+  background: white;
+  box-shadow: 0 0 8px rgba(0,0,0,0.15);
+}
+
+th, td {
+  border: 1px solid #aaa;
+  padding: 8px;
+  text-align: center;
+  font-size: 14px;
+}
+
   th { background:#e6ffe6; }
   tr:nth-child(even) { background:#f8fff8; }
   #total-row { font-weight:bold; background:#d9fdd9; }
@@ -248,38 +263,71 @@ async function getTodayKey() {
 
 
 // ------------------ Слушане на промени в Firebase ------------------
-function listenClassData(){
-  db.ref(`classes/${currentClass}/meals/today`).on('value', snap=>{
+
+
+function listenClassData() {
+  db.ref(`classes/${currentClass}/meals/today`).on('value', snap => {
     todayData = snap.val() || [];
-    renderToday();
   });
-  db.ref(`classes/${currentClass}/history`).on('value', snap=>{
+
+  db.ref(`classes/${currentClass}/history`).on('value', snap => {
     historyData = snap.val() || {};
+    renderToday();
   });
 }
 
-// ------------------ Рендер Днес ------------------
-function renderToday(){
-  const today = new Date();
-  const todayKey = today.toISOString().slice(0,10); // YYYY-MM-DD
 
-  document.getElementById('todayDate').textContent = formatDate(today);
-  document.getElementById('todayTitle').textContent = `Клас ${currentClass} – Кои ще обядват днес?`;
+
+// ------------------ Рендер Днес ------------------
+
+
+async function renderToday() {
+  let clock;
+
+  try {
+    clock = await getServerClock();
+  } catch (error) {
+    console.error("Не може да се получи сървърната дата:", error);
+    return;
+  }
+
+  const todayKey = clock.today;
+  const monthKey = todayKey.slice(0, 7);
+
+  const [year, month, day] = todayKey.split("-").map(Number);
+  const displayDate = new Date(year, month - 1, day, 12);
+
+  document.getElementById("todayDate").textContent =
+    formatDate(displayDate);
+
+  document.getElementById("todayTitle").textContent =
+    `Клас ${currentClass} – Кои ще обядват днес?`;
+
   const container = document.getElementById("childrenList");
   container.innerHTML = "";
+
+  const history = historyData[monthKey]?.[todayKey] || [];
+  const markedChildren = new Set(
+    Array.isArray(history) ? history : []
+  );
+
   let count = 0;
 
-  children.forEach(name=>{
+  children.forEach(name => {
     const div = document.createElement("div");
-    const isActive = todayData.includes(name);
+    const isActive = markedChildren.has(name);
+
     div.className = "child-card" + (isActive ? " active" : "");
     div.textContent = name;
-    div.onclick = ()=>{ toggleMeal(name, "today"); };
+    div.onclick = () => toggleMeal(name, "today");
+
     container.appendChild(div);
-    if(isActive) count++;
+
+    if (isActive) count++;
   });
 
-  document.getElementById("counter").textContent = `🍴 Общо: ${count} деца ще обядват днес.`;
+  document.getElementById("counter").textContent =
+    `🍴 Общо: ${count} деца ще обядват днес.`;
 }
 
 
@@ -518,12 +566,27 @@ function showHistory(){
 
 // ------------------ Админ ------------------
 // ------------------ Админ с autocomplete ------------------
-function showAdmin() {
+
+async function showAdmin() {
+  let clock;
+
+  try {
+    clock = await getServerClock();
+  } catch (error) {
+    console.error("Не може да се получи сървърната дата:", error);
+    alert("Не успяхме да получим датата от сървъра. Проверете интернет връзката.");
+    return;
+  }
+
   db.ref('classes').once('value').then(snapshot => {
+
     const classes = snapshot.val();
 
     // Дата трябва да се дефинира ПРЕДИ да я използваме
-    const today = new Date();
+const todayKey = clock.today;
+const monthKey = todayKey.slice(0, 7);
+const [year, month, day] = todayKey.split("-").map(Number);
+const today = new Date(year, month - 1, day, 12);
 
     function getWeekDay(date) {
       const days = ['Неделя','Понеделник','Вторник','Сряда','Четвъртък','Петък','Събота'];
@@ -541,63 +604,32 @@ function showAdmin() {
 
 
 // --- Основна таблица с класовете ---
-for (const cls in classes) {
-  const lastVisit = classes[cls].lastVisitDate; // последното влизане на учителя
-  const todayCount = (classes[cls].meals?.today || []).length;
 
-  // Ако няма ученици за днес или не е влизано → "няма информация"
-  let statusToday = todayCount > 0 ? todayCount : "няма информация";
+for (const cls in classes) {
+  const todayHistory =
+    classes[cls].history?.[monthKey]?.[todayKey] || [];
+
+  const todayCount = Array.isArray(todayHistory)
+    ? new Set(todayHistory).size
+    : 0;
+
+  // Ако няма записани деца в историята → „няма информация“
+  const statusToday = todayCount > 0
+    ? todayCount
+    : "няма информация";
 
   html += `<tr class="class-row"><td>${cls}</td><td>${statusToday}</td></tr>`;
 }
 
 
 
+
 html += `
-  <!-- Единствен ред Общо ученици -->
   <tr style="font-weight:bold; background:#e0f7fa;">
     <td>Общо ученици</td>
     <td id="sumToday"></td>
   </tr>
 
-  <!-- Директори -->
-  <tr>
-    <td>Директори</td>
-    <td colspan="1" contenteditable="true" class="manual-input" data-key="directors"></td>
-  </tr>
-
-<!-- Учители -->
-<tr>
-  <td>Учители</td>
-  <td style="width:60%;">
-    <div contenteditable="true" class="manual-input" data-key="teacherNames" style="width:60%; display:inline-block;"></div>
-    <div contenteditable="true" class="manual-input" data-key="teachers" style="width:35%; display:inline-block; text-align:center;"></div>
-  </td>
-  <!-- <td></td> --> <!-- премахнато -->
-</tr>
-
-<!-- Допълнителни ученици -->
-<tr>
-  <td>Допълнителни ученици</td>
-  <td style="width:60%;">
-    <div contenteditable="true" class="extra-student" style="width:60%; display:inline-block;"></div>
-    <div contenteditable="true" class="manual-input" data-key="extraCount" style="width:35%; display:inline-block; text-align:center;"></div>
-  </td>
-  <!-- <td></td> --> <!-- премахнато -->
-</tr>
-
-
-  <!-- ОБЩО ВСИЧКО -->
-  <tr style="font-weight:bold; background:#fff9c4;">
-    <td>ОБЩО ВСИЧКО</td>
-    <td colspan="1" id="grandTotal"></td>
-  </tr>
-
-  <!-- Вегетариански и Проба (не се включват в сумата) -->
-  <tr>
-    <td>Вегетариански</td>
-    <td colspan="1" contenteditable="true" class="manual-input" data-key="vegetarian"></td>
-  </tr>
   <tr>
     <td>Проба</td>
     <td colspan="1" id="sampleRow">1</td>
@@ -620,85 +652,7 @@ html += `
       return sum;
     }
 
-    // --- Обновяване на grandTotal ---
-   function updateGrandTotal() {
-  const classSum = sumClassToday();
-  let manualSum = 0;
-
-  // само директорите, учителите и допълнителните ученици се броят
-  document.querySelectorAll(".manual-input").forEach(cell => {
-    const key = cell.dataset.key;
-    if (key === "directors" || key === "teachers" || key === "extraCount") {
-      const val = parseInt(cell.textContent.trim()) || 0;
-      manualSum += val;
-    }
-  });
-
-  // крайна сума без вегетариански и проба
-  document.getElementById("grandTotal").textContent = classSum + manualSum;
-}
-
-
-    // --- Автодовършване + запазване на допълнителни ученици ---
-document.querySelectorAll(".extra-student").forEach((cell, index) => {
-  // зареждане при стартиране
-  const saved = JSON.parse(localStorage.getItem("extraStudentNames") || "[]");
-  if(saved[index]) cell.textContent = saved[index];
-
-  cell.addEventListener("input", (e) => {
-    const val = e.target.textContent.trim();
-
-    // --- Автодовършване ---
-    let allNames = JSON.parse(localStorage.getItem("allExtraNames") || "[]");
-    const match = allNames.find(n => n.toLowerCase().startsWith(val.toLowerCase()));
-    if(match && match.toLowerCase() !== val.toLowerCase()){
-      e.target.textContent = match;
-      placeCaretAtEnd(e.target);
-    } else if(val.length > 1 && !allNames.includes(val)){
-      allNames.push(val);
-      localStorage.setItem("allExtraNames", JSON.stringify(allNames));
-    }
-
-    // --- Запис в localStorage ---
-    let current = JSON.parse(localStorage.getItem("extraStudentNames") || "[]");
-    current[index] = val; // записваме на съответния ред
-    localStorage.setItem("extraStudentNames", JSON.stringify(current));
-
-    updateGrandTotal();
-  });
-});
-
-
-    // --- Функция за поставяне на курсора в края ---
-    function placeCaretAtEnd(el) {
-      el.focus();
-      if(typeof window.getSelection != "undefined"
-         && typeof document.createRange != "undefined") {
-        const range = document.createRange();
-        range.selectNodeContents(el);
-        range.collapse(false);
-        const sel = window.getSelection();
-        sel.removeAllRanges();
-        sel.addRange(range);
-      }
-    }
-
-    // --- Слушател за ръчните полета (директори, учители, вегетарианци) ---
-    document.querySelectorAll(".manual-input").forEach(cell => {
-      const key = cell.dataset.key;
-      if(key){
-        const saved = localStorage.getItem("manual_" + key);
-        if(saved) cell.textContent = saved;
-      }
-      cell.addEventListener("input", () => {
-        const key = cell.dataset.key;
-        if(key) localStorage.setItem("manual_" + key, cell.textContent.trim());
-        updateGrandTotal();
-      });
-    });
-
-    updateGrandTotal();
-
+   sumClassToday();
 
     // --- Показване на страницата и скриване на другите елементи ---
     document.getElementById("adminPage").style.display = "block";
@@ -763,17 +717,13 @@ async function checkAndResetForNewDay() {
   const lastResetRef = db.ref("classesMeta/lastResetDate");
   const lockRef = db.ref("classesMeta/resetLock");
 
+  // Проверяваме първо дали денят вече е нулиран.
   let markerSnapshot = await lastResetRef.get();
   let lastResetDate = markerSnapshot.val();
+  if (lastResetDate === today) return clock;
 
-  // За днес вече е нулирано.
-  if (lastResetDate === today) {
-    return clock;
-  }
-
-  // Първоначална настройка без предишен маркер.
-  // Не изтриваме данни, ако не можем безопасно да установим
-  // дали вече има отметки за текущия ден.
+  // Първоначална настройка: не изтриваме нищо, ако не можем
+  // безопасно да установим, че датите на класовете вече са днешни.
   if (lastResetDate == null) {
     const classesSnapshot = await db.ref("classes").get();
     const classes = classesSnapshot.val();
@@ -793,30 +743,28 @@ async function checkAndResetForNewDay() {
       );
     }
 
-    // Създаваме маркера, без да променяме отметките.
     await lastResetRef.transaction(current => {
       if (current == null) return today;
       return;
     });
 
     markerSnapshot = await lastResetRef.get();
-    lastResetDate = markerSnapshot.val();
-
-    if (lastResetDate === today) {
-      console.log("Първоначалната настройка приключи. Отметките са запазени.");
-      return clock;
-    }
+    if (markerSnapshot.val() === today) return clock;
   }
 
-  // Само едно приложение получава право да нулира.
+  // Важно: заключване със статус done за същата дата също блокира
+  // повторно нулиране. Преди това done НЕ блокираше и можеше да се
+  // изпълни ново изчистване при следващо отваряне на приложението.
   const claim = await lockRef.transaction(current => {
-    if (
-      current &&
-      current.date === today &&
-      current.status === "running" &&
-      clock.timestamp - Number(current.startedAt || 0) < 60000
-    ) {
-      return;
+    if (current && current.date === today) {
+      if (current.status === "done") return;
+
+      if (
+        current.status === "running" &&
+        clock.timestamp - Number(current.startedAt || 0) < 60000
+      ) {
+        return;
+      }
     }
 
     return {
@@ -827,26 +775,28 @@ async function checkAndResetForNewDay() {
   });
 
   if (!claim.committed) {
-    // Изчакваме другото приложение да завърши.
+    // Друго устройство може вече да е приключило нулирането.
     for (let i = 0; i < 40; i++) {
-      await new Promise(resolve => setTimeout(resolve, 500));
-
       markerSnapshot = await lastResetRef.get();
-
-      if (markerSnapshot.val() === today) {
-        return clock;
-      }
+      if (markerSnapshot.val() === today) return clock;
 
       const lockSnapshot = await lockRef.get();
       const lock = lockSnapshot.val();
 
-      if (
-        lock &&
-        lock.date === today &&
-        lock.status === "error"
-      ) {
+      if (lock && lock.date === today && lock.status === "done") {
+        // Маркерът и заключването би трябвало да са съгласувани.
+        // Ако не са, не нулираме повторно — спираме безопасно.
+        throw new Error(
+          "Нулирането е отбелязано като приключило, но датата не съвпада. " +
+          "Отметките не са променени повторно."
+        );
+      }
+
+      if (lock && lock.date === today && lock.status === "error") {
         throw new Error("Нулирането е неуспешно. Опитайте отново.");
       }
+
+      await new Promise(resolve => setTimeout(resolve, 500));
     }
 
     throw new Error(
@@ -855,11 +805,9 @@ async function checkAndResetForNewDay() {
   }
 
   try {
-    // Отметките и маркерът се записват с една операция.
+    // Само притежателят на заключването стига до тази операция.
     await resetAllClassesForNewDay(today);
 
-    // Този запис е само за състоянието на заключването.
-    // Ако не успее, маркерът за успешното нулиране вече е записан.
     try {
       await lockRef.set({
         date: today,
@@ -882,11 +830,9 @@ async function checkAndResetForNewDay() {
     } catch (lockError) {
       console.error("Не може да се запише състоянието:", lockError);
     }
-
     throw error;
   }
 }
-
 
 
  // ------------------ Старт ------------------
