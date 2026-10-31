@@ -60,6 +60,8 @@ tr.free {
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 
+<script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+
 <script>
 const firebaseConfig = {
   apiKey: "ТВОЯ_API_KEY",
@@ -427,7 +429,8 @@ function renderStats(month=null){
   const today = new Date();
   const monthKey = month || today.toISOString().slice(0,7); // YYYY-MM
   updateStatsMonthHeader(monthKey);
-  const daysInMonth = new Date(today.getFullYear(), today.getMonth()+1,0).getDate();
+const [selectedYear, selectedMonth] = monthKey.split("-").map(Number);
+const daysInMonth = new Date(selectedYear, selectedMonth, 0).getDate();
 
   const currentMonthRef = db.ref(`classes/${currentClass}/freeKids/${monthKey}`);
 
@@ -553,7 +556,76 @@ document.querySelectorAll(".payment-cell").forEach(cell=>{
     });
 
     updatePaymentSum();
+// --- Бутон за запазване на статистиката като снимка ---
+const imageButton = document.createElement("button");
+imageButton.textContent = "📷 Запази като снимка";
+imageButton.style.background = "#2196F3";
+imageButton.style.margin = "5px";
+
+imageButton.onclick = () => saveStatsImage(monthKey);
+
+const oldButton = document.getElementById("saveStatsImageButton");
+if (oldButton) oldButton.remove();
+
+imageButton.id = "saveStatsImageButton";
+
+document.getElementById("statsTable").before(imageButton);
   }
+}
+
+
+
+
+function saveStatsImage(monthKey) {
+  const table = document.querySelector("#statsTable table");
+
+  if (!table) {
+    alert("Няма таблица за запазване.");
+    return;
+  }
+
+  const [year, month] = monthKey.split("-").map(Number);
+
+  const monthName = [
+    "януари", "февруари", "март", "април",
+    "май", "юни", "юли", "август",
+    "септември", "октомври", "ноември", "декември"
+  ][month - 1];
+
+  const wrapper = document.createElement("div");
+  wrapper.style.background = "#ffffff";
+  wrapper.style.padding = "25px";
+  wrapper.style.width = table.offsetWidth + "px";
+
+  const title = document.createElement("h2");
+  title.textContent = `Статистика за ${monthName} ${year} г.`;
+  title.style.textAlign = "center";
+  title.style.fontSize = "24px";
+  title.style.marginBottom = "20px";
+  title.style.color = "#222";
+
+  const tableCopy = table.cloneNode(true);
+
+  wrapper.appendChild(title);
+  wrapper.appendChild(tableCopy);
+
+  document.body.appendChild(wrapper);
+
+  html2canvas(wrapper, {
+    scale: 2,
+    backgroundColor: "#ffffff"
+  }).then(canvas => {
+    const link = document.createElement("a");
+    link.download = `Statistika-${monthKey}.png`;
+    link.href = canvas.toDataURL("image/png");
+    link.click();
+
+    document.body.removeChild(wrapper);
+  }).catch(error => {
+    console.error("Грешка при създаване на изображението:", error);
+    alert("Не успяхме да създадем снимката.");
+    document.body.removeChild(wrapper);
+  });
 }
 
 // ------------------ История ------------------
