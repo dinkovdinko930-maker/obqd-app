@@ -465,14 +465,16 @@ const daysInMonth = new Date(selectedYear, selectedMonth, 0).getDate();
 
   // ------------------ Функция за построяване на таблицата ------------------
   function buildTable(monthKey, daysInMonth, freeKidsFromDB){
-    let table = "<table><tr><th>Име</th>";
+    let table = `<table style="table-layout:auto; width:max-content; min-width:100%;">
+  <tr>
+    <th style="white-space:nowrap; min-width:max-content; padding:8px 15px;">Име</th>`;
     for(let d=1; d<=daysInMonth; d++){ table += `<th>${d}</th>`; }
     table += "<th>Общо</th><th>Евро</th></tr>";
 
     let grandTotal = 0;
     children.forEach(name=>{
       let total = 0;
-      let row = `<tr><td class="child-name">${name}</td>`;
+      let row = `<tr><td class="child-name" style="white-space:nowrap; padding:8px 15px;">${name}</td>`;
       for(let d=1; d<=daysInMonth; d++){
         const dayKey = `${monthKey}-${String(d).padStart(2,'0')}`;
         const tick = historyData[monthKey]?.[dayKey]?.includes(name)?"✔️":""; 
